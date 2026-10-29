@@ -1,0 +1,245 @@
+// lib/models/user_model.dart
+import 'grade_model.dart';
+
+class User {
+  final String id;
+  final String email;
+  final String name;
+  final String role; // 'user', 'student', 'professor', 'admin'
+  final String? profileImage;
+  final int points; // Points used for leaderboard/rewards
+  final bool isApproved; // For professors requiring admin approval
+
+  User({
+    required this.id,
+    required this.email,
+    required this.name,
+    required this.role,
+    this.profileImage,
+    this.points = 0,
+    this.isApproved = true, // Default to true for students/users
+    this.enrolledCourseIds,
+    this.teachingCourseIds,
+    this.phoneNumber,
+    this.isBanned = false,
+    this.notificationsEnabled,
+  });
+
+  final List<String>? enrolledCourseIds; // For students
+  final List<String>? teachingCourseIds; // For professors
+  final String? phoneNumber;
+  final bool isBanned;
+  final bool? notificationsEnabled;
+
+  String get rank {
+    if (points >= 5000) return 'Diamond';
+    if (points >= 2000) return 'Emerald';
+    if (points >= 1000) return 'Gold';
+    if (points >= 500) return 'Silver';
+    if (points >= 100) return 'Bronze';
+    return 'Novice';
+  }
+
+  factory User.fromJson(Map<String, dynamic> json) {
+    return User(
+      id: json['id'],
+      email: json['email'],
+      name: json['name'],
+      role: json['role'],
+      profileImage: json['profileImage'],
+      points: json['points'] != null
+          ? int.tryParse(json['points'].toString()) ?? 0
+          : 0,
+      isApproved: json['isApproved'] ?? true,
+      enrolledCourseIds: json['enrolledCourseIds'] != null
+          ? List<String>.from(json['enrolledCourseIds'])
+          : null,
+      teachingCourseIds: json['teachingCourseIds'] != null
+          ? List<String>.from(json['teachingCourseIds'])
+          : null,
+      phoneNumber: json['phoneNumber'],
+      isBanned: json['isBanned'] ?? false,
+      notificationsEnabled: json['notificationsEnabled'] ?? true,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'email': email,
+      'name': name,
+      'role': role,
+      'profileImage': profileImage,
+      'points': points,
+      'isApproved': isApproved,
+      'enrolledCourseIds': enrolledCourseIds,
+      'teachingCourseIds': teachingCourseIds,
+      'phoneNumber': phoneNumber,
+      'isBanned': isBanned,
+      'notificationsEnabled': notificationsEnabled,
+    };
+  }
+}
+
+class Task {
+  final String id;
+  final String title;
+  final String description;
+  final String
+  status; // 'pending', 'approved', 'completed', 'rejected', 'resubmitted'
+  // Support multiple assignees (list of user IDs) for multi-assign
+  final List<String> assignees;
+  // Optional human-readable names for assignees (if included from server)
+  final List<String>? assigneeNames;
+  final DateTime dueDate;
+  final String? creator;
+  final String? rejectionReason; // Reason for rejection
+  final DateTime? completedAt; // optional completion timestamp
+  // Per-task bookmarks tracked as list of userIds who bookmarked
+  final List<String>? bookmarkedBy;
+  final List<String>?
+  requestedAssigneeNames; // suggested assignee names when users request a task
+
+  // New fields for Course/Grading support
+  final String? courseId;
+  final String? type; // 'homework', 'quiz', 'project', etc.
+  final double? weight; // e.g., 1.0, 0.5
+  final Map<String, Grade>? grades; // Map<UserId, Grade>
+  final List<String>? attachments; // List of file URLs
+  final Map<String, DateTime>? completionStatus; // Map<UserId, CompletedAt>
+  final Map<String, List<String>>? submissions; // Map<UserId, List<FileUrl>>
+
+  Task({
+    required this.id,
+    required this.title,
+    required this.description,
+    required this.status,
+    required this.assignees,
+    this.assigneeNames,
+    required this.dueDate,
+    this.creator,
+    this.rejectionReason,
+    this.completedAt,
+    this.bookmarkedBy,
+    this.requestedAssigneeNames,
+    this.courseId,
+    this.type,
+    this.weight,
+    this.grades,
+    this.attachments,
+    this.completionStatus,
+    this.submissions,
+  });
+
+  factory Task.fromJson(Map<String, dynamic> json) {
+    // Parse assignees as list of strings if present, otherwise fall back to single 'assignee' field
+    List<String> assignees = [];
+    if (json['assignees'] is List) {
+      assignees = List<String>.from(json['assignees'].map((e) => e.toString()));
+    } else if (json['assignee'] != null) {
+      assignees = [json['assignee'].toString()];
+    }
+
+    List<String>? assigneeNames;
+    if (json['assigneeNames'] is List) {
+      assigneeNames = List<String>.from(
+        json['assigneeNames'].map((e) => e.toString()),
+      );
+    } else if (json['assigneeName'] != null) {
+      assigneeNames = [json['assigneeName'].toString()];
+    }
+
+    List<String>? bookmarked;
+    if (json['bookmarkedBy'] is List) {
+      bookmarked = List<String>.from(
+        json['bookmarkedBy'].map((e) => e.toString()),
+      );
+    }
+
+    Map<String, Grade>? gradesMap;
+    if (json['grades'] != null) {
+      gradesMap = {};
+      (json['grades'] as Map<String, dynamic>).forEach((key, value) {
+        gradesMap![key] = Grade.fromJson(value);
+      });
+    }
+
+    Map<String, DateTime>? completionStatusMap;
+    if (json['completionStatus'] != null) {
+      completionStatusMap = {};
+      (json['completionStatus'] as Map<String, dynamic>).forEach((key, value) {
+        completionStatusMap![key] = DateTime.parse(value.toString());
+      });
+    }
+
+    Map<String, List<String>>? submissionsMap;
+    if (json['submissions'] != null) {
+      submissionsMap = {};
+      (json['submissions'] as Map<String, dynamic>).forEach((key, value) {
+        if (value is List) {
+          submissionsMap![key] = List<String>.from(
+            value.map((e) => e.toString()),
+          );
+        }
+      });
+    }
+
+    return Task(
+      id: json['id'],
+      title: json['title'],
+      description: json['description'],
+      status: json['status'],
+      assignees: assignees,
+      assigneeNames: assigneeNames,
+      dueDate: DateTime.parse(json['dueDate']),
+      creator: json['creator'],
+      rejectionReason: json['rejectionReason'],
+      completedAt: json['completedAt'] != null
+          ? DateTime.tryParse(json['completedAt'].toString())
+          : null,
+      bookmarkedBy: bookmarked,
+      requestedAssigneeNames: json['requestedAssigneeNames'] is List
+          ? List<String>.from(
+              json['requestedAssigneeNames'].map((e) => e.toString()),
+            )
+          : null,
+      courseId: json['courseId'],
+      type: json['type'],
+      weight: json['weight'] != null
+          ? (json['weight'] as num).toDouble()
+          : null,
+      grades: gradesMap,
+      attachments: json['attachments'] != null
+          ? List<String>.from(json['attachments'])
+          : null,
+      completionStatus: completionStatusMap,
+      submissions: submissionsMap,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'title': title,
+      'description': description,
+      'status': status,
+      'assignees': assignees,
+      'assigneeNames': assigneeNames,
+      'dueDate': dueDate.toIso8601String(),
+      'creator': creator,
+      'rejectionReason': rejectionReason,
+      'completedAt': completedAt?.toIso8601String(),
+      'bookmarkedBy': bookmarkedBy,
+      'requestedAssigneeNames': requestedAssigneeNames,
+      'courseId': courseId,
+      'type': type,
+      'weight': weight,
+      'grades': grades?.map((k, v) => MapEntry(k, v.toJson())),
+      'attachments': attachments,
+      'completionStatus': completionStatus?.map(
+        (k, v) => MapEntry(k, v.toIso8601String()),
+      ),
+      'submissions': submissions,
+    };
+  }
+}
