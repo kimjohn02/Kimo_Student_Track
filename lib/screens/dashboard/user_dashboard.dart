@@ -2,11 +2,11 @@
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../../models/user_model.dart';
 import '../../services/firestore_task_service.dart';
 import '../../services/auth_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 import '../profile/progress_detail_screen.dart';
 
 class UserDashboard extends StatefulWidget {
@@ -150,13 +150,11 @@ class _UserDashboardState extends State<UserDashboard> {
                         ],
                       ),
                       // Notification Icon with Badge
-                      StreamBuilder<QuerySnapshot>(
-                        stream: FirebaseFirestore.instance
-                            .collection('notifications')
-                            .where('recipientId', isEqualTo: widget.user.id)
-                            .orderBy('createdAt', descending: true)
-                            .limit(50)
-                            .snapshots(),
+                      StreamBuilder<List<Map<String, dynamic>>>(
+                        stream: Supabase.instance.client
+                            .from('notifications')
+                            .stream(primaryKey: ['id'])
+                            .eq('recipientId', widget.user.id),
                         builder: (context, snapshot) {
                           if (snapshot.hasError) {
                             return IconButton(
@@ -175,13 +173,9 @@ class _UserDashboardState extends State<UserDashboard> {
                             );
                           }
 
-                          final notifications = snapshot.data?.docs ?? [];
+                          final notifications = snapshot.data ?? [];
                           final unreadCount = notifications
-                              .where(
-                                (doc) =>
-                                    !(doc.data()
-                                        as Map<String, dynamic>)['read'],
-                              )
+                              .where((row) => row['read'] == false)
                               .length;
 
                           return Stack(
@@ -716,7 +710,7 @@ class _UserDashboardState extends State<UserDashboard> {
 
   void _showNotificationsSheet(
     BuildContext context,
-    List<QueryDocumentSnapshot> notifications,
+    List<Map<String, dynamic>> notifications,
   ) {
     showModalBottomSheet(
       context: context,
@@ -738,14 +732,16 @@ class _UserDashboardState extends State<UserDashboard> {
                     style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                   ),
                   TextButton(
-                    onPressed: () {
-                      // Mark all as read
-                      final batch = FirebaseFirestore.instance.batch();
-                      for (var doc in notifications) {
-                        batch.update(doc.reference, {'read': true});
+                    onPressed: () async {
+                      // Mark all as read via Supabase
+                      final supabase = Supabase.instance.client;
+                      for (final row in notifications) {
+                        await supabase
+                            .from('notifications')
+                            .update({'read': true})
+                            .eq('id', row['id']);
                       }
-                      batch.commit();
-                      Navigator.pop(context);
+                      if (context.mounted) Navigator.pop(context);
                     },
                     child: const Text('Mark all as read'),
                   ),
@@ -764,15 +760,16 @@ class _UserDashboardState extends State<UserDashboard> {
                   child: ListView.builder(
                     itemCount: notifications.length,
                     itemBuilder: (context, index) {
-                      final doc = notifications[index];
-                      final data = doc.data() as Map<String, dynamic>;
+                      final data = notifications[index];
                       final isRead = data['read'] ?? false;
-                      final timestamp = data['createdAt'] as Timestamp?;
-                      final timeStr = timestamp != null
-                          ? DateFormat(
-                              'MMM d, h:mm a',
-                            ).format(timestamp.toDate())
-                          : '';
+                      final createdAtStr = data['createdAt'] as String?;
+                      String timeStr = '';
+                      if (createdAtStr != null) {
+                        try {
+                          final dt = DateTime.parse(createdAtStr).toLocal();
+                          timeStr = DateFormat('MMM d, h:mm a').format(dt);
+                        } catch (_) {}
+                      }
 
                       return ListTile(
                         leading: CircleAvatar(
@@ -808,8 +805,11 @@ class _UserDashboardState extends State<UserDashboard> {
                           ],
                         ),
                         onTap: () {
-                          // Mark as read
-                          doc.reference.update({'read': true});
+                          // Mark individual notification as read
+                          Supabase.instance.client
+                              .from('notifications')
+                              .update({'read': true})
+                              .eq('id', data['id']);
                         },
                       );
                     },

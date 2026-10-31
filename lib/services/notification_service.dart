@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart'
     show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../models/user_model.dart';
 
@@ -45,11 +44,11 @@ class NotificationService {
       return;
     }
 
-    final androidSettings = AndroidInitializationSettings(
+    final androidSettings = const AndroidInitializationSettings(
       '@mipmap/ic_launcher',
     );
-    final iosSettings = DarwinInitializationSettings();
-    final macSettings = DarwinInitializationSettings();
+    final iosSettings = const DarwinInitializationSettings();
+    final macSettings = const DarwinInitializationSettings();
 
     final settings = InitializationSettings(
       android: androidSettings,
@@ -103,13 +102,13 @@ class NotificationService {
           importance: Importance.high,
         );
         await androidPlugin.createNotificationChannel(taskChannel);
-        const fcmChannel = AndroidNotificationChannel(
-          'fcm_channel',
-          'FCM Notifications',
-          description: 'Notifications received from FCM',
+        const generalChannel = AndroidNotificationChannel(
+          'general_channel',
+          'General Notifications',
+          description: 'General app notifications',
           importance: Importance.high,
         );
-        await androidPlugin.createNotificationChannel(fcmChannel);
+        await androidPlugin.createNotificationChannel(generalChannel);
       }
     } catch (e) {
       supported = false;
@@ -121,19 +120,25 @@ class NotificationService {
   static Future<void> requestPermissions() async {
     if (kIsWeb) return;
     final platform = defaultTargetPlatform;
-    try {
-      // Request general notification permission with FirebaseMessaging
-      final settings = await FirebaseMessaging.instance.requestPermission(
-        alert: true,
-        badge: true,
-        sound: true,
-      );
-      debugPrint('Notification permission settings: $settings');
-    } catch (e) {
-      debugPrint('Error requesting firebase messaging permission: $e');
+
+    // iOS permissions
+    if (platform == TargetPlatform.iOS) {
+      try {
+        final iosPlugin = _plugin
+            .resolvePlatformSpecificImplementation<
+              IOSFlutterLocalNotificationsPlugin
+            >();
+        await iosPlugin?.requestPermissions(
+          alert: true,
+          badge: true,
+          sound: true,
+        );
+      } catch (e) {
+        debugPrint('Error requesting iOS notification permission: $e');
+      }
     }
 
-    // Request Android 13 POST_NOTIFICATIONS runtime permission if needed
+    // Android 13+ POST_NOTIFICATIONS permission
     if (platform == TargetPlatform.android) {
       try {
         if (await Permission.notification.isDenied) {
@@ -181,6 +186,7 @@ class NotificationService {
     required int id,
     required String title,
     required String body,
+    String? payload,
   }) async {
     if (!supported) return;
 
@@ -200,47 +206,9 @@ class NotificationService {
     );
 
     try {
-      await _plugin.show(id, title, body, details, payload: 'general');
+      await _plugin.show(id, title, body, details, payload: payload ?? 'general');
     } catch (e) {
       debugPrint('NotificationService: showGeneralNotification failed - $e');
-    }
-  }
-
-  // Show a local notification from a Firebase RemoteMessage or generic payload
-  static Future<void> showFromRemote(RemoteMessage message) async {
-    if (!supported) return;
-    final title =
-        message.notification?.title ??
-        message.data['title'] ??
-        'New Notification';
-    final body = message.notification?.body ?? message.data['body'] ?? '';
-
-    const androidDetails = AndroidNotificationDetails(
-      'fcm_channel',
-      'FCM Notifications',
-      channelDescription: 'Notifications from Firebase Cloud Messaging',
-      importance: Importance.high,
-      priority: Priority.high,
-    );
-    const iosDarwinDetails = DarwinNotificationDetails();
-    const details = NotificationDetails(
-      android: androidDetails,
-      iOS: iosDarwinDetails,
-      macOS: iosDarwinDetails,
-    );
-
-    final payload =
-        message.data['taskId'] ?? message.data['taskID'] ?? message.data['id'];
-    try {
-      await _plugin.show(
-        title.hashCode ^ body.hashCode,
-        title,
-        body,
-        details,
-        payload: payload?.toString(),
-      );
-    } catch (e) {
-      debugPrint('NotificationService.showFromRemote error: $e');
     }
   }
 }

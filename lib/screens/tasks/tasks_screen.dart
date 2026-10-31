@@ -174,12 +174,26 @@ class _TasksScreenState extends State<TasksScreen> {
                   },
                 )
               else ...[
-                // Action: Submit Task (Students only)
+                // Action: Submit / Update Output (Students only)
                 if (effectiveUser?.role != 'admin' &&
-                    effectiveUser?.role != 'professor')
-                  ListTile(
-                    leading: const Icon(Icons.upload_file, color: Colors.blue),
-                    title: const Text('Submit Task'),
+                    effectiveUser?.role != 'professor') () {
+                  final hasOutput = (task.submissions?[widget.user?.id]?.isNotEmpty == true) ||
+                      (task.attachments?.isNotEmpty == true);
+                  return ListTile(
+                    leading: Icon(
+                      hasOutput ? Icons.sync : Icons.cloud_upload_outlined,
+                      color: hasOutput ? Colors.indigo : Colors.blue,
+                    ),
+                    title: Text(
+                      hasOutput ? 'View / Update Output' : 'Submit Task Output',
+                      style: TextStyle(
+                        fontWeight: hasOutput ? FontWeight.bold : FontWeight.w500,
+                      ),
+                    ),
+                    subtitle: Text(
+                      hasOutput ? 'Review or replace your submitted files' : 'Upload attachments to complete task',
+                      style: const TextStyle(fontSize: 11, color: Colors.grey),
+                    ),
                     onTap: () {
                       Navigator.pop(context);
                       Navigator.push(
@@ -192,7 +206,8 @@ class _TasksScreenState extends State<TasksScreen> {
                         ),
                       );
                     },
-                  ),
+                  );
+                }(),
 
                 ListTile(
                   leading: const Icon(Icons.edit, color: Colors.blue),

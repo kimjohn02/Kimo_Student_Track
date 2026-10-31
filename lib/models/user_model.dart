@@ -42,24 +42,28 @@ class User {
 
   factory User.fromJson(Map<String, dynamic> json) {
     return User(
-      id: json['id'],
-      email: json['email'],
-      name: json['name'],
-      role: json['role'],
-      profileImage: json['profileImage'],
+      id: json['id']?.toString() ?? '',
+      email: json['email']?.toString() ?? '',
+      name: (json['name'] ?? json['displayName'] ?? '').toString(),
+      role: (json['role'] ?? 'user').toString(),
+      profileImage: (json['profileImage'] ?? json['profile_image'] ?? json['photoURL'])?.toString(),
       points: json['points'] != null
           ? int.tryParse(json['points'].toString()) ?? 0
           : 0,
-      isApproved: json['isApproved'] ?? true,
+      isApproved: json['isApproved'] ?? json['is_approved'] ?? true,
       enrolledCourseIds: json['enrolledCourseIds'] != null
           ? List<String>.from(json['enrolledCourseIds'])
-          : null,
+          : (json['enrolled_course_ids'] != null
+              ? List<String>.from(json['enrolled_course_ids'])
+              : null),
       teachingCourseIds: json['teachingCourseIds'] != null
           ? List<String>.from(json['teachingCourseIds'])
-          : null,
-      phoneNumber: json['phoneNumber'],
-      isBanned: json['isBanned'] ?? false,
-      notificationsEnabled: json['notificationsEnabled'] ?? true,
+          : (json['teaching_course_ids'] != null
+              ? List<String>.from(json['teaching_course_ids'])
+              : null),
+      phoneNumber: (json['phoneNumber'] ?? json['phone_number'])?.toString(),
+      isBanned: json['isBanned'] ?? json['is_banned'] ?? false,
+      notificationsEnabled: json['notificationsEnabled'] ?? json['notifications_enabled'] ?? true,
     );
   }
 
@@ -70,13 +74,37 @@ class User {
       'name': name,
       'role': role,
       'profileImage': profileImage,
+      'profile_image': profileImage,
       'points': points,
       'isApproved': isApproved,
+      'is_approved': isApproved,
       'enrolledCourseIds': enrolledCourseIds,
+      'enrolled_course_ids': enrolledCourseIds,
       'teachingCourseIds': teachingCourseIds,
+      'teaching_course_ids': teachingCourseIds,
       'phoneNumber': phoneNumber,
+      'phone_number': phoneNumber,
       'isBanned': isBanned,
+      'is_banned': isBanned,
       'notificationsEnabled': notificationsEnabled,
+      'notifications_enabled': notificationsEnabled,
+    };
+  }
+
+  Map<String, dynamic> toSupabaseMap() {
+    return {
+      'id': id,
+      'email': email,
+      'name': name,
+      'role': role,
+      'profile_image': profileImage,
+      'points': points,
+      'is_approved': isApproved,
+      'enrolled_course_ids': enrolledCourseIds ?? [],
+      'teaching_course_ids': teachingCourseIds ?? [],
+      'phone_number': phoneNumber,
+      'is_banned': isBanned,
+      'notifications_enabled': notificationsEnabled ?? true,
     };
   }
 }
@@ -134,46 +162,52 @@ class Task {
   factory Task.fromJson(Map<String, dynamic> json) {
     // Parse assignees as list of strings if present, otherwise fall back to single 'assignee' field
     List<String> assignees = [];
-    if (json['assignees'] is List) {
-      assignees = List<String>.from(json['assignees'].map((e) => e.toString()));
-    } else if (json['assignee'] != null) {
-      assignees = [json['assignee'].toString()];
+    final rawAssignees = json['assignees'] ?? json['assignee'];
+    if (rawAssignees is List) {
+      assignees = List<String>.from(rawAssignees.map((e) => e.toString()));
+    } else if (rawAssignees != null) {
+      assignees = [rawAssignees.toString()];
     }
 
     List<String>? assigneeNames;
-    if (json['assigneeNames'] is List) {
-      assigneeNames = List<String>.from(
-        json['assigneeNames'].map((e) => e.toString()),
-      );
-    } else if (json['assigneeName'] != null) {
-      assigneeNames = [json['assigneeName'].toString()];
+    final rawNames = json['assigneeNames'] ?? json['assignee_names'] ?? json['assigneeName'];
+    if (rawNames is List) {
+      assigneeNames = List<String>.from(rawNames.map((e) => e.toString()));
+    } else if (rawNames != null) {
+      assigneeNames = [rawNames.toString()];
     }
 
     List<String>? bookmarked;
-    if (json['bookmarkedBy'] is List) {
-      bookmarked = List<String>.from(
-        json['bookmarkedBy'].map((e) => e.toString()),
-      );
+    final rawBookmarked = json['bookmarkedBy'] ?? json['bookmarked_by'];
+    if (rawBookmarked is List) {
+      bookmarked = List<String>.from(rawBookmarked.map((e) => e.toString()));
     }
 
     Map<String, Grade>? gradesMap;
-    if (json['grades'] != null) {
+    if (json['grades'] != null && json['grades'] is Map) {
       gradesMap = {};
       (json['grades'] as Map<String, dynamic>).forEach((key, value) {
-        gradesMap![key] = Grade.fromJson(value);
+        if (value is Map<String, dynamic>) {
+          gradesMap![key] = Grade.fromJson(value);
+        }
       });
     }
 
     Map<String, DateTime>? completionStatusMap;
-    if (json['completionStatus'] != null) {
+    final rawCompletion = json['completionStatus'] ?? json['completion_status'];
+    if (rawCompletion != null && rawCompletion is Map) {
       completionStatusMap = {};
-      (json['completionStatus'] as Map<String, dynamic>).forEach((key, value) {
-        completionStatusMap![key] = DateTime.parse(value.toString());
+      (rawCompletion as Map<String, dynamic>).forEach((key, value) {
+        if (value != null) {
+          try {
+            completionStatusMap![key] = DateTime.parse(value.toString());
+          } catch (_) {}
+        }
       });
     }
 
     Map<String, List<String>>? submissionsMap;
-    if (json['submissions'] != null) {
+    if (json['submissions'] != null && json['submissions'] is Map) {
       submissionsMap = {};
       (json['submissions'] as Map<String, dynamic>).forEach((key, value) {
         if (value is List) {
@@ -184,27 +218,41 @@ class Task {
       });
     }
 
+    DateTime parsedDueDate = DateTime.now().add(const Duration(days: 7));
+    final rawDueDate = json['dueDate'] ?? json['due_date'];
+    if (rawDueDate != null) {
+      try {
+        parsedDueDate = DateTime.parse(rawDueDate.toString());
+      } catch (_) {}
+    }
+
+    final rawCompletedAt = json['completedAt'] ?? json['completed_at'];
+    DateTime? parsedCompletedAt;
+    if (rawCompletedAt != null) {
+      parsedCompletedAt = DateTime.tryParse(rawCompletedAt.toString());
+    }
+
+    final rawReqAssignees = json['requestedAssigneeNames'] ?? json['requested_assignee_names'];
+    List<String>? reqAssignees;
+    if (rawReqAssignees is List) {
+      reqAssignees = List<String>.from(rawReqAssignees.map((e) => e.toString()));
+    }
+
     return Task(
-      id: json['id'],
-      title: json['title'],
-      description: json['description'],
-      status: json['status'],
+      id: json['id']?.toString() ?? '',
+      title: json['title']?.toString() ?? '',
+      description: json['description']?.toString() ?? '',
+      status: json['status']?.toString() ?? 'pending',
       assignees: assignees,
       assigneeNames: assigneeNames,
-      dueDate: DateTime.parse(json['dueDate']),
-      creator: json['creator'],
-      rejectionReason: json['rejectionReason'],
-      completedAt: json['completedAt'] != null
-          ? DateTime.tryParse(json['completedAt'].toString())
-          : null,
+      dueDate: parsedDueDate,
+      creator: json['creator']?.toString(),
+      rejectionReason: (json['rejectionReason'] ?? json['rejection_reason'])?.toString(),
+      completedAt: parsedCompletedAt,
       bookmarkedBy: bookmarked,
-      requestedAssigneeNames: json['requestedAssigneeNames'] is List
-          ? List<String>.from(
-              json['requestedAssigneeNames'].map((e) => e.toString()),
-            )
-          : null,
-      courseId: json['courseId'],
-      type: json['type'],
+      requestedAssigneeNames: reqAssignees,
+      courseId: (json['courseId'] ?? json['course_id'])?.toString(),
+      type: json['type']?.toString(),
       weight: json['weight'] != null
           ? (json['weight'] as num).toDouble()
           : null,
@@ -225,13 +273,20 @@ class Task {
       'status': status,
       'assignees': assignees,
       'assigneeNames': assigneeNames,
+      'assignee_names': assigneeNames,
       'dueDate': dueDate.toIso8601String(),
+      'due_date': dueDate.toIso8601String(),
       'creator': creator,
       'rejectionReason': rejectionReason,
+      'rejection_reason': rejectionReason,
       'completedAt': completedAt?.toIso8601String(),
+      'completed_at': completedAt?.toIso8601String(),
       'bookmarkedBy': bookmarkedBy,
+      'bookmarked_by': bookmarkedBy,
       'requestedAssigneeNames': requestedAssigneeNames,
+      'requested_assignee_names': requestedAssigneeNames,
       'courseId': courseId,
+      'course_id': courseId,
       'type': type,
       'weight': weight,
       'grades': grades?.map((k, v) => MapEntry(k, v.toJson())),
@@ -239,7 +294,36 @@ class Task {
       'completionStatus': completionStatus?.map(
         (k, v) => MapEntry(k, v.toIso8601String()),
       ),
+      'completion_status': completionStatus?.map(
+        (k, v) => MapEntry(k, v.toIso8601String()),
+      ),
       'submissions': submissions,
+    };
+  }
+
+  Map<String, dynamic> toSupabaseMap() {
+    return {
+      'id': id,
+      'title': title,
+      'description': description,
+      'status': status,
+      'assignees': assignees,
+      'assignee_names': assigneeNames ?? [],
+      'due_date': dueDate.toIso8601String(),
+      'creator': creator,
+      'rejection_reason': rejectionReason,
+      'completed_at': completedAt?.toIso8601String(),
+      'bookmarked_by': bookmarkedBy ?? [],
+      'requested_assignee_names': requestedAssigneeNames ?? [],
+      'course_id': courseId,
+      'type': type,
+      'weight': weight,
+      'grades': grades?.map((k, v) => MapEntry(k, v.toJson())) ?? {},
+      'attachments': attachments ?? [],
+      'completion_status': completionStatus?.map(
+        (k, v) => MapEntry(k, v.toIso8601String()),
+      ) ?? {},
+      'submissions': submissions ?? {},
     };
   }
 }

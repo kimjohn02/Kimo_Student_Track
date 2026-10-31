@@ -97,7 +97,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Firebase error: ${auth.initError}'),
+            content: Text('Auth error: ${auth.initError}'),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 5),
           ),

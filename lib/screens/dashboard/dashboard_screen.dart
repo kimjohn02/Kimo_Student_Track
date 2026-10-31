@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import '../../services/notification_service.dart';
 import 'package:provider/provider.dart';
 import '../../services/auth_service.dart';
-import 'package:flutter/foundation.dart' show kDebugMode;
 import '../../models/user_model.dart';
 import '../../services/firestore_task_service.dart';
 import 'package:keitask_management/widgets/circular_nav_bar.dart';
+import '../auth/login_screen.dart';
 import '../tasks/tasks_screen.dart';
 import '../profile/profile_screen.dart';
 import '../leaderboard/leaderboard_screen.dart';
@@ -17,9 +17,9 @@ import '../admin/users_screen.dart';
 import '../admin/task_statistics_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
-  final User user;
+  final User? user;
 
-  const DashboardScreen({super.key, required this.user});
+  const DashboardScreen({super.key, this.user});
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -28,7 +28,6 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   int _currentIndex = 0;
   late final PageController _pageController;
-  // Use NotificationService for cross-platform safety
 
   // Track known task IDs to detect new ones
   Set<String> _knownTaskIds = {};
@@ -38,21 +37,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void initState() {
     super.initState();
     _pageController = PageController(initialPage: _currentIndex);
-    // No-op here; NotificationService should be initialized from main.dart. If it wasn't,
-    // NotificationService.init() ran at startup and it's safe to call showTaskNotification.
     _listenForNewTasks();
   }
-
-  // Initialization for NotificationService occurs in main.dart (or can be handled lazily in the service itself)
 
   void _listenForNewTasks() {
     final firestore = Provider.of<FirestoreTaskService>(context, listen: false);
     firestore.tasksStream().listen((tasks) {
       if (!mounted) return;
 
+      final authService = Provider.of<AuthService>(context, listen: false);
+      final currentUser = widget.user ?? authService.appUser;
+      if (currentUser == null) return;
+
       // Filter tasks assigned to this user
       final myTasks = tasks
-          .where((t) => t.assignees.contains(widget.user.id))
+          .where((t) => t.assignees.contains(currentUser.id))
           .toList();
 
       if (_isFirstLoad) {
@@ -61,8 +60,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         return;
       }
 
-      final authService = Provider.of<AuthService>(context, listen: false);
-      final userPrefs = authService.appUser?.notificationsEnabled ?? true;
+      final userPrefs = currentUser.notificationsEnabled ?? true;
       for (var task in myTasks) {
         if (!_knownTaskIds.contains(task.id)) {
           _knownTaskIds.add(task.id);
@@ -70,41 +68,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         }
       }
     });
-
-    // Listen for admin notifications
-    FirebaseFirestore.instance
-        .collection('notifications')
-        .where('recipientId', isEqualTo: widget.user.id)
-        .where('read', isEqualTo: false)
-        .snapshots()
-        .listen((snapshot) {
-          if (!mounted) return;
-          for (var change in snapshot.docChanges) {
-            if (change.type == DocumentChangeType.added) {
-              final data = change.doc.data();
-              if (data != null) {
-                final title = data['title'] as String? ?? 'New Notification';
-                final body = data['body'] as String? ?? '';
-
-                // Mark as read immediately to avoid re-showing
-                change.doc.reference.update({'read': true});
-
-                // Show local notification
-                NotificationService.showGeneralNotification(
-                  id: change.doc.hashCode,
-                  title: title,
-                  body: body,
-                );
-              }
-            }
-          }
-        });
   }
-
-  // Removed the local plugin wrapper in favor of NotificationService
-
-  // Helper to detect unsupported scenarios (e.g., web builds)
-  // NotificationService handles platform compatibility internally.
 
   @override
   void dispose() {
@@ -113,10 +77,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _onTabSelected(int index) {
-    final role = widget.user.role.toLowerCase();
+    final authService = Provider.of<AuthService>(context, listen: false);
+    final currentUser = widget.user ?? authService.appUser;
+    if (currentUser == null) return;
+
+    final role = currentUser.role.toLowerCase();
     if (role == 'professor' && index == 2) {
       // "New Task" action - Navigate to CreateTaskScreen
-      Navigator.pushNamed(context, '/create-task', arguments: widget.user);
+      Navigator.pushNamed(context, '/create-task', arguments: currentUser);
       return; // Do not update _currentIndex
     }
 
@@ -135,7 +103,36 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final role = widget.user.role.toLowerCase();
+    final auth = Provider.of<AuthService>(context);
+    final effectiveUser = widget.user ?? auth.appUser;
+
+    // Gracefully handle cold start, page refresh, or missing session
+    if (effectiveUser == null) {
+      if (auth.supabaseUser != null) {
+        return const Scaffold(
+          backgroundColor: Color(0xFFEFF8FF),
+          body: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text(
+                  'Loading your dashboard...',
+                  style: TextStyle(
+                    color: Color(0xFF0F1724),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+      return const LoginScreen();
+    }
+
+    final role = effectiveUser.role.toLowerCase();
     final isAdmin = role == 'admin';
     final isProfessor = role == 'professor';
 
@@ -144,11 +141,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     if (isAdmin) {
       screens = [
-        AdminDashboard(user: widget.user),
-        AdminTasksApprovalScreen(user: widget.user),
+        AdminDashboard(user: effectiveUser),
+        AdminTasksApprovalScreen(user: effectiveUser),
         const UsersScreen(showBackButton: false),
         const LeaderboardScreen(showBackButton: false),
-        ProfileScreen(user: widget.user, onBackToHome: _backToHome),
+        ProfileScreen(user: effectiveUser, onBackToHome: _backToHome),
       ];
       navItems = [
         const CircularNavBarItem(icon: Icons.home, label: 'Home'),
@@ -162,13 +159,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ];
     } else if (isProfessor) {
       screens = [
-        UserDashboard(user: widget.user),
+        UserDashboard(user: effectiveUser),
         AdminTasksApprovalScreen(
-          user: widget.user,
+          user: effectiveUser,
         ), // Professors use this to approve/reject
         const SizedBox(), // Placeholder for "New Task" (handled in _onTabSelected)
         const TaskStatisticsScreen(showBackButton: false),
-        ProfileScreen(user: widget.user, onBackToHome: _backToHome),
+        ProfileScreen(user: effectiveUser, onBackToHome: _backToHome),
       ];
       navItems = [
         const CircularNavBarItem(icon: Icons.home, label: 'Home'),
@@ -180,10 +177,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
     } else {
       // Student
       screens = [
-        UserDashboard(user: widget.user),
-        TasksScreen(user: widget.user, showBackButton: false),
+        UserDashboard(user: effectiveUser),
+        TasksScreen(user: effectiveUser, showBackButton: false),
         const LeaderboardScreen(showBackButton: false),
-        ProfileScreen(user: widget.user, onBackToHome: _backToHome),
+        ProfileScreen(user: effectiveUser, onBackToHome: _backToHome),
       ];
       navItems = [
         const CircularNavBarItem(icon: Icons.home, label: 'Home'),
@@ -202,7 +199,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
 
     return Scaffold(
-      // Add a debug FAB for quick notification testing in debug mode
       floatingActionButton: kDebugMode
           ? FloatingActionButton(
               onPressed: () {
@@ -211,7 +207,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   title: 'Demo Task',
                   description: 'This is a demo task notification',
                   status: 'approved',
-                  assignees: [widget.user.id],
+                  assignees: [effectiveUser.id],
                   dueDate: DateTime.now().add(const Duration(days: 1)),
                 );
                 NotificationService.showTaskNotification(demoTask);
@@ -222,8 +218,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       extendBody: false,
       body: PageView(
         controller: _pageController,
-        physics:
-            const NeverScrollableScrollPhysics(), // Disable swipe to avoid accidental "New Task" selection
+        physics: const NeverScrollableScrollPhysics(),
         onPageChanged: (int idx) => setState(() => _currentIndex = idx),
         children: screens,
       ),

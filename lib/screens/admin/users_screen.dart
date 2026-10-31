@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/user_model.dart';
 import '../../services/auth_service.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../tasks/create_task_screen.dart';
 import '../../widgets/flash_message.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 
 class UsersScreen extends StatefulWidget {
   final bool showBackButton;
@@ -508,18 +508,17 @@ class _UsersScreenState extends State<UsersScreen> {
                                     content: Text('Sending notification...'),
                                   ),
                                 );
-                                try {
-                                  await FirebaseFirestore.instance
-                                      .collection('notifications')
-                                      .add({
-                                        'recipientId': user.id,
-                                        'title': title,
-                                        'body': body,
-                                        'createdAt':
-                                            FieldValue.serverTimestamp(),
-                                        'read': false,
-                                        'type': 'admin_message',
-                                      });
+                                 try {
+                                   await Supabase.instance.client
+                                       .from('notifications')
+                                       .insert({
+                                         'recipientId': user.id,
+                                         'title': title,
+                                         'body': body,
+                                         'createdAt': DateTime.now().toIso8601String(),
+                                         'read': false,
+                                         'type': 'admin_message',
+                                       });
 
                                   if (!context.mounted) return;
                                   FlashMessage.show(
@@ -618,25 +617,18 @@ class _UsersScreenState extends State<UsersScreen> {
                     final title = titleController.text.trim();
                     final body = bodyController.text.trim();
                     try {
-                      final firestore = FirebaseFirestore.instance;
-                      final batch = firestore.batch();
-                      final timestamp = FieldValue.serverTimestamp();
+                       final supabase = Supabase.instance.client;
+                       final now = DateTime.now().toIso8601String();
+                       final rows = _selectedUserIds.map((uid) => <String, dynamic>{
+                         'recipientId': uid,
+                         'title': title,
+                         'body': body,
+                         'createdAt': now,
+                         'read': false,
+                         'type': 'admin_message',
+                       }).toList();
 
-                      for (final uid in _selectedUserIds) {
-                        final docRef = firestore
-                            .collection('notifications')
-                            .doc();
-                        batch.set(docRef, {
-                          'recipientId': uid,
-                          'title': title,
-                          'body': body,
-                          'createdAt': timestamp,
-                          'read': false,
-                          'type': 'admin_message',
-                        });
-                      }
-
-                      await batch.commit();
+                       await supabase.from('notifications').insert(rows);
 
                       if (!context.mounted) return;
                       FlashMessage.show(

@@ -34,7 +34,7 @@ class LeaderboardScreen extends StatelessWidget {
 
     final dashboardAncestor = context
         .findAncestorWidgetOfExactType<DashboardScreen>();
-    final isAdmin = dashboardAncestor?.user.role == 'admin';
+    final isAdmin = (dashboardAncestor?.user?.role ?? authService.appUser?.role) == 'admin';
 
     return FutureBuilder<List<User>>(
       future: authService.getAllUsers(),

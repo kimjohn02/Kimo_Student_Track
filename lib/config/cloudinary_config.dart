@@ -3,7 +3,7 @@
 
 class CloudinaryConfig {
   // Replace these with your Cloudinary account values.
-  static const String cloudName = 'du0gs9lum';
+  static const String cloudName = 'pt0hmlpf';
   static const String uploadPreset = 'keitaskfolder';
 
   // API key provided (temporary local placement). Keep this secret.

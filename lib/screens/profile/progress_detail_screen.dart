@@ -13,7 +13,7 @@ class ProgressDetailScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final auth = Provider.of<AuthService>(context);
     final tasksService = Provider.of<FirestoreTaskService>(context);
-    final currentUserId = auth.appUser?.id ?? auth.firebaseUser?.uid;
+    final currentUserId = auth.appUser?.id ?? auth.supabaseUser?.id;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Progress Detail')),
